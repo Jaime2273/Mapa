@@ -452,52 +452,54 @@ function handleSearchInput() {
 
 // Realizar búsqueda
 function performSearch() {
-    const query = searchInput.value.trim().toLowerCase();
+    const query = searchInput.value.trim();
     if (!query) return;
 
-    searchResults.innerHTML = '';
-    
-    // Buscar en localidades conocidas
-    const results = Object.entries(knownLocations)
-        .filter(([location]) => location.includes(query))
-        .map(([location, coords]) => ({ location, ...coords }));
+    searchResults.innerHTML = '<div class="search-result-item">Buscando...</div>';
+    searchResults.style.display = 'block';
 
-    // Buscar también en los pueblos cargados
-    Object.entries(townsData).forEach(([key, town]) => {
-        if (town.name.toLowerCase().includes(query)) {
-            results.push({
-                location: town.name,
-                lat: town.markers[0]?.lat || knownLocations['jávea'].lat,
-                lng: town.markers[0]?.lng || knownLocations['jávea'].lng
-            });
-        }
-    });
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`)
+        .then(response => response.json())
+        .then(data => {
+            searchResults.innerHTML = '';
+            if (data.length === 0) {
+                searchResults.innerHTML = '<div class="search-result-item">No se encontraron resultados</div>';
+                return;
+            }
 
-    if (results.length === 0) {
-        searchResults.innerHTML = '<div class="search-result-item">No se encontraron resultados</div>';
-    } else {
-        results.forEach(result => {
-            const resultItem = document.createElement('div');
-            resultItem.className = 'search-result-item';
-            resultItem.textContent = result.location;
-            resultItem.addEventListener('click', () => {
-                map.setView([result.lat, result.lng], 13);
-                searchResults.style.display = 'none';
-                
-                // Si es un pueblo de nuestra lista, cargarlo
-                const townKey = Object.keys(townsData).find(key => 
-                    townsData[key].name.toLowerCase() === result.location.toLowerCase()
-                );
-                
-                if (townKey) {
+            data.slice(0, 5).forEach(place => {
+                const name = place.display_name;
+                const lat = parseFloat(place.lat);
+                const lon = parseFloat(place.lon);
+
+                const resultItem = document.createElement('div');
+                resultItem.className = 'search-result-item';
+                resultItem.textContent = name;
+
+                resultItem.addEventListener('click', () => {
+                    const townKey = name.toLowerCase().replace(/\s+/g, '-');
+
+                    if (!townsData[townKey]) {
+                        townsData[townKey] = {
+                            name: name,
+                            markers: []
+                        };
+                        updateTownSelect();
+                    }
+
                     currentTown = townKey;
                     townSelect.value = townKey;
+
+                    map.setView([lat, lon], 15);
                     loadMarkersForTown();
-                }
+                    searchResults.style.display = 'none';
+                });
+
+                searchResults.appendChild(resultItem);
             });
-            searchResults.appendChild(resultItem);
+        })
+        .catch(err => {
+            console.error('Error al buscar en Nominatim:', err);
+            searchResults.innerHTML = '<div class="search-result-item">Error al buscar lugar</div>';
         });
-    }
-    
-    searchResults.style.display = results.length ? 'block' : 'none';
 }
